@@ -1,0 +1,863 @@
+# PROJECT FOLDER: tugasku-spec-pack
+Gunakan seluruh isi folder proyek di bawah ini sebagai satu kesatuan konteks (Single Source of Truth).
+
+================================================================================
+FILE 1: AGENTS.md
+================================================================================
+1. Patuhi warna dari `TugasKuTheme` (MaterialTheme.colorScheme). Jangan gunakan warna hex mentah di luar blok tema, warna ungu default template, gradasi, atau efek glow.
+2. Gunakan Sentence case untuk seluruh label tombol, judul, dan chip filter. Aktifkan `fontFeatureSettings = "tnum"` pada teks penghitung tugas.
+3. Dilarang menggunakan emoji atau simbol unicode dekoratif. Gunakan ikon resmi dari `androidx.compose.material.icons`.
+4. Maksimal 1 tombol utama terisi penuh (`Button`) per layar/dialog. Tombol `Batal` menggunakan `TextButton` di sebelah kiri tombol utama.
+5. Pertahankan arsitektur MVVM murni: UI Compose -> `TaskViewModel` (`StateFlow`) -> `TaskRepository` -> `TaskDao` (Room).
+
+================================================================================
+FILE 2: PRD.md & design.md (Ringkasan Spesifikasi Inti)
+================================================================================
+- **Nama Aplikasi**: TugasKu (Manajemen Tugas Harian Offline-First Android).
+- **Fitur P0**:
+  - F-01: Daftar tugas reaktif (`ORDER BY isCompleted ASC, createdAt DESC`).
+  - F-02: Tambah tugas (`title` wajib 1..120 karakter, `description` opsional 0..500 karakter).
+  - F-03: Edit tugas dengan validasi karakter yang sama.
+  - F-04: Tandai selesai/belum selesai dengan coretan teks (`LineThrough`) dan warna meredup.
+  - F-05: Hapus tugas disertai `Snackbar` dan tombol aksi `Urungkan` (Undo).
+  - F-06: Filter `Semua`, `Aktif`, `Selesai` lengkap dengan jumlah item per filter dan tampilan kosong (`EmptyStateView`) yang kontekstual.
+- **Radius Konsentris**: Tombol/Chip/Input = `10.dp`, Kartu Tugas = `16.dp`, Dialog = `24.dp`.
+- **Target Sentuh**: Minimum `48.dp` untuk semua kontrol interaktif.
+
+================================================================================
+FILE 3: app/build.gradle.kts
+================================================================================
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("com.google.devtools.ksp") version "1.9.22-1.0.17"
+}
+
+dependencies {
+    val roomVersion = "2.6.1"
+    val lifecycleVersion = "2.7.0"
+
+    implementation(platform("androidx.compose:compose-bom:2024.02.00"))
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.activity:activity-compose:1.8.2")
+
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:$lifecycleVersion")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:$lifecycleVersion")
+
+    implementation("androidx.room:room-runtime:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
+    ksp("androidx.room:room-compiler:$roomVersion")
+}
+
+================================================================================
+FILE 4: app/src/main/java/com/example/todolistapp/MainActivity.kt
+(Kode Lengkap Sesuai PRD.md, design.md, Theme.kt, dan content.md)
+================================================================================
+package com.example.todolistapp // GANTI DENGAN NAMA PACKAGE PROJECT KAMU
+
+import android.content.Context
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.Assignment
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.room.*
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+
+// ============================================================================
+// 1. DESIGN TOKENS & THEME (Soft Product Archetype — Light & Dark)
+// ============================================================================
+
+val LightBgCanvas = Color(0xFFFAF6EE)
+val LightBgSurface = Color(0xFFFFFFFF)
+val LightBgElevated = Color(0xFFF2ECE1)
+val LightTextPrimary = Color(0xFF1D2422)
+val LightTextSecondary = Color(0xFF4A5552)
+val LightTextMuted = Color(0xFF687470)
+val LightBorderSubtle = Color(0xFFE0D9CE)
+val LightBorderStrong = Color(0xFFB8B0A4)
+val LightAccent = Color(0xFF1D7A6B)
+val LightAccentFg = Color(0xFFFFFFFF)
+val LightAccentContainer = Color(0xFFD7EFEA)
+val LightAccentContainerFg = Color(0xFF0F3831)
+val LightDanger = Color(0xFFA33A2E)
+val LightDangerSurface = Color(0xFFF9E6E4)
+
+val DarkBgCanvas = Color(0xFF0E1312)
+val DarkBgSurface = Color(0xFF151C1A)
+val DarkBgElevated = Color(0xFF1E2724)
+val DarkTextPrimary = Color(0xFFE4ECE9)
+val DarkTextSecondary = Color(0xFFA5B2AE)
+val DarkTextMuted = Color(0xFF808E8A)
+val DarkBorderSubtle = Color(0xFF26312E)
+val DarkBorderStrong = Color(0xFF3D4C48)
+val DarkAccent = Color(0xFF6BC2B2)
+val DarkAccentFg = Color(0xFF0B2420)
+val DarkAccentContainer = Color(0xFF1E3B36)
+val DarkAccentContainerFg = Color(0xFFCFECE6)
+val DarkDanger = Color(0xFFD9786C)
+val DarkDangerSurface = Color(0xFF381D1A)
+
+private val LightColors = lightColorScheme(
+    primary = LightAccent,
+    onPrimary = LightAccentFg,
+    secondaryContainer = LightAccentContainer,
+    onSecondaryContainer = LightAccentContainerFg,
+    background = LightBgCanvas,
+    onBackground = LightTextPrimary,
+    surface = LightBgSurface,
+    onSurface = LightTextPrimary,
+    surfaceVariant = LightBgElevated,
+    onSurfaceVariant = LightTextSecondary,
+    outline = LightBorderStrong,
+    outlineVariant = LightBorderSubtle,
+    error = LightDanger,
+    errorContainer = LightDangerSurface
+)
+
+private val DarkColors = darkColorScheme(
+    primary = DarkAccent,
+    onPrimary = DarkAccentFg,
+    secondaryContainer = DarkAccentContainer,
+    onSecondaryContainer = DarkAccentContainerFg,
+    background = DarkBgCanvas,
+    onBackground = DarkTextPrimary,
+    surface = DarkBgSurface,
+    onSurface = DarkTextPrimary,
+    surfaceVariant = DarkBgElevated,
+    onSurfaceVariant = DarkTextSecondary,
+    outline = DarkBorderStrong,
+    outlineVariant = DarkBorderSubtle,
+    error = DarkDanger,
+    errorContainer = DarkDangerSurface
+)
+
+val AppTypography = Typography(
+    headlineSmall = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 22.sp,
+        lineHeight = 28.sp
+    ),
+    titleLarge = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 18.sp,
+        lineHeight = 24.sp
+    ),
+    titleMedium = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Medium,
+        fontSize = 16.sp,
+        lineHeight = 22.sp
+    ),
+    bodyMedium = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Normal,
+        fontSize = 14.sp,
+        lineHeight = 20.sp
+    ),
+    labelLarge = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Medium,
+        fontSize = 14.sp,
+        lineHeight = 20.sp
+    ),
+    labelMedium = TextStyle(
+        fontFamily = FontFamily.Monospace,
+        fontWeight = FontWeight.Medium,
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
+        fontFeatureSettings = "tnum"
+    )
+)
+
+@Composable
+fun TugasKuTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    content: @Composable () -> Unit
+) {
+    MaterialTheme(
+        colorScheme = if (darkTheme) DarkColors else LightColors,
+        typography = AppTypography,
+        content = content
+    )
+}
+
+// ============================================================================
+// 2. DATA LAYER (Room Entity, DAO, Database, Repository)
+// ============================================================================
+
+@Entity(tableName = "tasks")
+data class Task(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val title: String,
+    val description: String = "",
+    val isCompleted: Boolean = false,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Dao
+interface TaskDao {
+    @Query("SELECT * FROM tasks ORDER BY isCompleted ASC, createdAt DESC")
+    fun getAllTasks(): Flow<List<Task>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTask(task: Task)
+
+    @Update
+    suspend fun updateTask(task: Task)
+
+    @Delete
+    suspend fun deleteTask(task: Task)
+}
+
+@Database(entities = [Task::class], version = 1, exportSchema = false)
+abstract class AppDatabase : RoomDatabase() {
+    abstract fun taskDao(): TaskDao
+
+    companion object {
+        @Volatile
+        private var INSTANCE: AppDatabase? = null
+
+        fun getDatabase(context: Context): AppDatabase {
+            return INSTANCE ?: synchronized(this) {
+                val instance = Room.databaseBuilder(
+                    context.applicationContext,
+                    AppDatabase::class.java,
+                    "tugasku_database"
+                ).build()
+                INSTANCE = instance
+                instance
+            }
+        }
+    }
+}
+
+class TaskRepository(private val taskDao: TaskDao) {
+    val allTasks: Flow<List<Task>> = taskDao.getAllTasks()
+
+    suspend fun insert(task: Task) = taskDao.insertTask(task)
+    suspend fun update(task: Task) = taskDao.updateTask(task)
+    suspend fun delete(task: Task) = taskDao.deleteTask(task)
+}
+
+// ============================================================================
+// 3. VIEWMODEL & STATEFLOW LAYER (MVVM)
+// ============================================================================
+
+enum class TaskFilter(val label: String) {
+    ALL("Semua"),
+    ACTIVE("Aktif"),
+    COMPLETED("Selesai")
+}
+
+data class TodoUiState(
+    val filteredTasks: List<Task> = emptyList(),
+    val currentFilter: TaskFilter = TaskFilter.ALL,
+    val allCount: Int = 0,
+    val activeCount: Int = 0,
+    val completedCount: Int = 0,
+    val isLoading: Boolean = true
+)
+
+class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
+
+    private val _filter = MutableStateFlow(TaskFilter.ALL)
+    private var recentlyDeletedTask: Task? = null
+
+    val uiState: StateFlow<TodoUiState> = combine(
+        repository.allTasks,
+        _filter
+    ) { allTasks, currentFilter ->
+        val active = allTasks.count { !it.isCompleted }
+        val completed = allTasks.count { it.isCompleted }
+        val filtered = when (currentFilter) {
+            TaskFilter.ALL -> allTasks
+            TaskFilter.ACTIVE -> allTasks.filter { !it.isCompleted }
+            TaskFilter.COMPLETED -> allTasks.filter { it.isCompleted }
+        }
+        TodoUiState(
+            filteredTasks = filtered,
+            currentFilter = currentFilter,
+            allCount = allTasks.size,
+            activeCount = active,
+            completedCount = completed,
+            isLoading = false
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = TodoUiState()
+    )
+
+    fun setFilter(newFilter: TaskFilter) {
+        _filter.value = newFilter
+    }
+
+    fun addTask(title: String, description: String) {
+        val cleanTitle = title.trim()
+        val cleanDesc = description.trim().take(500)
+        if (cleanTitle.isEmpty() || cleanTitle.length > 120) return
+        viewModelScope.launch {
+            repository.insert(Task(title = cleanTitle, description = cleanDesc))
+        }
+    }
+
+    fun updateTask(task: Task, newTitle: String, newDescription: String) {
+        val cleanTitle = newTitle.trim()
+        val cleanDesc = newDescription.trim().take(500)
+        if (cleanTitle.isEmpty() || cleanTitle.length > 120) return
+        viewModelScope.launch {
+            repository.update(task.copy(title = cleanTitle, description = cleanDesc))
+        }
+    }
+
+    fun toggleTaskCompletion(task: Task) {
+        viewModelScope.launch {
+            repository.update(task.copy(isCompleted = !task.isCompleted))
+        }
+    }
+
+    fun deleteTask(task: Task) {
+        viewModelScope.launch {
+            recentlyDeletedTask = task
+            repository.delete(task)
+        }
+    }
+
+    fun undoDelete() {
+        val taskToRestore = recentlyDeletedTask ?: return
+        viewModelScope.launch {
+            repository.insert(taskToRestore)
+            recentlyDeletedTask = null
+        }
+    }
+}
+
+class TaskViewModelFactory(private val repository: TaskRepository) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(TaskViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return TaskViewModel(repository) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}
+
+// ============================================================================
+// 4. UI LAYER (Jetpack Compose + Material 3 + Concentric Radii)
+// ============================================================================
+
+@Composable
+fun TodoScreen(viewModel: TaskViewModel) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
+
+    var showDialog by remember { mutableStateOf(false) }
+    var editingTask by remember { mutableStateOf<Task?>(null) }
+
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
+        topBar = {
+            TodoTopBar(
+                completedCount = state.completedCount,
+                totalCount = state.allCount
+            )
+        },
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = {
+                    editingTask = null
+                    showDialog = true
+                },
+                shape = RoundedCornerShape(16.dp),
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                elevation = FloatingActionButtonDefaults.elevation(0.dp, 0.dp, 0.dp, 0.dp),
+                icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                text = { Text("Tambah tugas", style = MaterialTheme.typography.labelLarge) }
+            )
+        }
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+            contentAlignment = Alignment.TopCenter
+        ) {
+            Column(
+                modifier = Modifier
+                    .widthIn(max = 640.dp)
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp)
+            ) {
+                Spacer(modifier = Modifier.height(12.dp))
+
+                FilterChipRow(
+                    currentFilter = state.currentFilter,
+                    allCount = state.allCount,
+                    activeCount = state.activeCount,
+                    completedCount = state.completedCount,
+                    onFilterSelected = { viewModel.setFilter(it) }
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (!state.isLoading && state.filteredTasks.isEmpty()) {
+                    EmptyStateView(
+                        filter = state.currentFilter,
+                        onPrimaryAction = {
+                            when (state.currentFilter) {
+                                TaskFilter.ALL -> {
+                                    editingTask = null
+                                    showDialog = true
+                                }
+                                TaskFilter.ACTIVE -> viewModel.setFilter(TaskFilter.COMPLETED)
+                                TaskFilter.COMPLETED -> viewModel.setFilter(TaskFilter.ALL)
+                            }
+                        }
+                    )
+                } else {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(bottom = 88.dp)
+                    ) {
+                        items(state.filteredTasks, key = { it.id }) { task ->
+                            TaskCard(
+                                task = task,
+                                onToggleComplete = { viewModel.toggleTaskCompletion(task) },
+                                onEditClick = {
+                                    editingTask = task
+                                    showDialog = true
+                                },
+                                onDeleteClick = {
+                                    viewModel.deleteTask(task)
+                                    coroutineScope.launch {
+                                        snackbarHostState.currentSnackbarData?.dismiss()
+                                        val result = snackbarHostState.showSnackbar(
+                                            message = "Tugas \"${task.title}\" dihapus",
+                                            actionLabel = "Urungkan",
+                                            duration = SnackbarDuration.Short
+                                        )
+                                        if (result == SnackbarResult.ActionPerformed) {
+                                            viewModel.undoDelete()
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (showDialog) {
+            TaskFormDialog(
+                task = editingTask,
+                onDismiss = { showDialog = false },
+                onConfirm = { title, description ->
+                    if (editingTask == null) {
+                        viewModel.addTask(title, description)
+                    } else {
+                        viewModel.updateTask(editingTask!!, title, description)
+                    }
+                    showDialog = false
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun TodoTopBar(completedCount: Int, totalCount: Int) {
+    Surface(
+        color = MaterialTheme.colorScheme.background,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(64.dp)
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "TugasKu",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+
+                // Signature Detail: Monospace Progress Pill with tabular numerals
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Text(
+                        text = if (totalCount == 0) "0 tugas" else "$completedCount/$totalCount selesai",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                }
+            }
+            HorizontalDivider(thickness = 1.dp, color = MaterialTheme.colorScheme.outlineVariant)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FilterChipRow(
+    currentFilter: TaskFilter,
+    allCount: Int,
+    activeCount: Int,
+    completedCount: Int,
+    onFilterSelected: (TaskFilter) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        TaskFilter.entries.forEach { filter ->
+            val count = when (filter) {
+                TaskFilter.ALL -> allCount
+                TaskFilter.ACTIVE -> activeCount
+                TaskFilter.COMPLETED -> completedCount
+            }
+            val isSelected = currentFilter == filter
+
+            FilterChip(
+                selected = isSelected,
+                onClick = { onFilterSelected(filter) },
+                shape = RoundedCornerShape(10.dp),
+                leadingIcon = if (isSelected) {
+                    {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                } else null,
+                label = {
+                    Text(
+                        text = "${filter.label} ($count)",
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    selectedLeadingIconColor = MaterialTheme.colorScheme.onSecondaryContainer
+                ),
+                border = FilterChipDefaults.filterChipBorder(
+                    enabled = true,
+                    selected = isSelected,
+                    borderColor = MaterialTheme.colorScheme.outline,
+                    selectedBorderColor = MaterialTheme.colorScheme.primary
+                )
+            )
+        }
+    }
+}
+
+@Composable
+fun TaskCard(
+    task: Task,
+    onToggleComplete: () -> Unit,
+    onEditClick: () -> Unit,
+    onDeleteClick: () -> Unit
+) {
+    val cardBg by animateColorAsState(
+        targetValue = if (task.isCompleted) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.surface,
+        animationSpec = tween(150),
+        label = "cardBgAnimation"
+    )
+    val mutedColor = if (isSystemInDarkTheme()) DarkTextMuted else LightTextMuted
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = cardBg,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Checkbox(
+                checked = task.isCompleted,
+                onCheckedChange = { onToggleComplete() },
+                modifier = Modifier.semantics {
+                    contentDescription = if (task.isCompleted) {
+                        "Tandai ${task.title} sebagai belum selesai"
+                    } else {
+                        "Tandai ${task.title} sebagai selesai"
+                    }
+                }
+            )
+
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp)
+            ) {
+                Text(
+                    text = task.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (task.isCompleted) mutedColor else MaterialTheme.colorScheme.onSurface,
+                    textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (task.description.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = task.description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (task.isCompleted) mutedColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                        textDecoration = if (task.isCompleted) TextDecoration.LineThrough else TextDecoration.None,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            IconButton(onClick = onEditClick) {
+                Icon(
+                    imageVector = Icons.Outlined.Edit,
+                    contentDescription = "Edit tugas ${task.title}",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            IconButton(onClick = onDeleteClick) {
+                Icon(
+                    imageVector = Icons.Outlined.Delete,
+                    contentDescription = "Hapus tugas ${task.title}",
+                    tint = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun EmptyStateView(
+    filter: TaskFilter,
+    onPrimaryAction: () -> Unit
+) {
+    val (title, body, actionLabel) = when (filter) {
+        TaskFilter.ALL -> Triple(
+            "Belum ada tugas tercatat",
+            "Catat hal yang perlu Anda selesaikan hari ini agar lebih terorganisir.",
+            "Buat tugas pertama"
+        )
+        TaskFilter.ACTIVE -> Triple(
+            "Semua tugas sudah beres",
+            "Tidak ada tugas aktif yang tersisa saat ini.",
+            "Lihat tugas selesai"
+        )
+        TaskFilter.COMPLETED -> Triple(
+            "Belum ada tugas yang selesai",
+            "Centang kotak di samping tugas saat Anda selesai mengerjakannya.",
+            "Tampilkan semua tugas"
+        )
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 64.dp, horizontal = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Assignment,
+            contentDescription = null,
+            modifier = Modifier.size(36.dp),
+            tint = MaterialTheme.colorScheme.outline
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = body,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(20.dp))
+        OutlinedButton(
+            onClick = onPrimaryAction,
+            shape = RoundedCornerShape(10.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+        ) {
+            Text(text = actionLabel, style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}
+
+@Composable
+fun TaskFormDialog(
+    task: Task?,
+    onDismiss: () -> Unit,
+    onConfirm: (String, String) -> Unit
+) {
+    var title by remember { mutableStateOf(task?.title ?: "") }
+    var description by remember { mutableStateOf(task?.description ?: "") }
+    var isTitleError by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(dismissOnClickOutside = title.isBlank()),
+        shape = RoundedCornerShape(24.dp),
+        containerColor = MaterialTheme.colorScheme.surface,
+        title = {
+            Text(
+                text = if (task == null) "Tambah tugas baru" else "Edit tugas",
+                style = MaterialTheme.typography.titleLarge
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = {
+                        if (it.length <= 120) {
+                            title = it
+                            isTitleError = false
+                        }
+                    },
+                    label = { Text("Judul tugas *") },
+                    placeholder = { Text("Contoh: Kumpulkan laporan praktikum") },
+                    isError = isTitleError,
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
+                    supportingText = {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(if (isTitleError) "Judul tugas wajib diisi" else "")
+                            Text("${title.length}/120")
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = {
+                        if (it.length <= 500) description = it
+                    },
+                    label = { Text("Catatan tambahan (opsional)") },
+                    placeholder = { Text("Tulis rincian atau langkah singkat...") },
+                    minLines = 3,
+                    maxLines = 4,
+                    shape = RoundedCornerShape(10.dp),
+                    supportingText = {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            Text("${description.length}/500")
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (title.isBlank()) {
+                        isTitleError = true
+                    } else {
+                        onConfirm(title, description)
+                    }
+                },
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text(if (task == null) "Simpan tugas" else "Simpan perubahan")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text("Batal", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    )
+}
+
+// ============================================================================
+// 5. MAIN ACTIVITY (Entry Point)
+// ============================================================================
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        val database = AppDatabase.getDatabase(applicationContext)
+        val repository = TaskRepository(database.taskDao())
+        val viewModelFactory = TaskViewModelFactory(repository)
+
+        setContent {
+            TugasKuTheme {
+                val taskViewModel: TaskViewModel = viewModel(factory = viewModelFactory)
+                TodoScreen(viewModel = taskViewModel)
+            }
+        }
+    }
+}

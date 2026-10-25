@@ -1,0 +1,29 @@
+<resources>
+    <string name="app_name">TugasKu</string>
+    <string name="fab_add_task">Tambah tugas</string>
+    <string name="progress_zero_tasks">0 tugas</string>
+    <string name="progress_completed_format">%1$d/%2$d selesai</string>
+    <string name="filter_all">Semua</string>
+    <string name="filter_active">Aktif</string>
+    <string name="filter_completed">Selesai</string>
+    <string name="empty_all_title">Belum ada tugas tercatat</string>
+    <string name="empty_all_body">Catat hal yang perlu Anda selesaikan hari ini agar lebih terorganisir.</string>
+    <string name="empty_all_action">Buat tugas pertama</string>
+    <string name="empty_active_title">Semua tugas sudah beres</string>
+    <string name="empty_active_body">Tidak ada tugas aktif yang tersisa saat ini.</string>
+    <string name="empty_active_action">Lihat tugas selesai</string>
+    <string name="empty_completed_title">Belum ada tugas yang selesai</string>
+    <string name="empty_completed_body">Centang kotak di samping tugas saat Anda selesai mengerjakannya.</string>
+    <string name="empty_completed_action">Tampilkan semua tugas</string>
+    <string name="dialog_title_add">Tambah tugas baru</string>
+    <string name="dialog_title_edit">Edit tugas</string>
+    <string name="label_task_title">Judul tugas *</string>
+    <string name="placeholder_task_title">Contoh: Kumpulkan laporan praktikum</string>
+    <string name="error_task_title_empty">Judul tugas wajib diisi</string>
+    <string name="label_task_description">Catatan tambahan (opsional)</string>
+    <string name="placeholder_task_description">Tulis rincian atau langkah singkat...</string>
+    <string name="button_save_new_task">Simpan tugas</string>
+    <string name="button_save_changes">Simpan perubahan</string>
+    <string name="button_cancel">Batal</string>
+    <string name="snackbar_undo">Urungkan</string>
+</resources>

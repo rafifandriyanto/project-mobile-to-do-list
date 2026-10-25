@@ -1,0 +1,6 @@
+{
+  "name": "TugasKu",
+  "description": "Manajemen Tugas Harian Offline-First Android dengan arsitektur MVVM dan Room Database.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
